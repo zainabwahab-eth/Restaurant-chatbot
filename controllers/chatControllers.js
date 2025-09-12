@@ -92,7 +92,7 @@ async function processUserInput(session, userInput) {
       return `❌ *Invalid Email*\nPlease enter a valid email address:`;
     }
     session.customerEmail = input;
-    session.currentStep = "main_menu"; // Reset to main_menu
+    session.currentStep = "main_menu";
     await session.save();
     return await handleCheckout(session);
   }
@@ -363,7 +363,7 @@ async function handleCheckout(session) {
 
   // Payment integration will be added later
   if (!session.customerEmail) {
-    session.currentStep = "checkout";
+    session.currentStep = "awaiting_email";
     await session.save();
     return `📧 Please enter your email address to continue with payment.`;
   }

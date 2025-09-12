@@ -19,7 +19,6 @@ const sessionSchema = new mongoose.Schema(
         "browsing_menu",
         "selecting_item",
         "quantity",
-        "checkout",
         "awaiting_email",
       ],
       default: "main_menu",
