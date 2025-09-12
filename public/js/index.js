@@ -2,7 +2,7 @@ function getSessionId() {
   let sessionId = localStorage.getItem("chatbot_session");
   if (!sessionId) {
     sessionId =
-      "user_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
+      "user_" + Date.now() + "_" + Math.random().toString(36).substring(2, 11);
     localStorage.setItem("chatbot_session", sessionId);
   }
   return sessionId;
@@ -15,6 +15,10 @@ const sendBtn = document.getElementById("sendBtn");
 
 // Add message to chat
 function addMessage(message, isBot = false) {
+  if (typeof message !== "string") {
+    console.error("addMessage: Expected string, got:", message);
+    return;
+  }
   const messageDiv = document.createElement("div");
   messageDiv.className = `message ${isBot ? "bot-message" : "user-message"}`;
   messageDiv.innerHTML = message.replace(/\n/g, "<br>");
@@ -67,6 +71,43 @@ async function sendMessage() {
 
     if (data.success) {
       addMessage(data.response, true);
+      if (data.paymentData) {
+        const paystack = new PaystackPop();
+        paystack.newTransaction({
+          key: data.paymentData.publicKey,
+          email: data.paymentData.email,
+          amount: data.paymentData.amount,
+          ref: data.paymentData.reference,
+          onSuccess: async (transaction) => {
+            addMessage(`ref_${transaction.reference}`);
+            showTyping();
+            try {
+              const verifyResponse = await fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  message: `ref_${transaction.reference}`,
+                  sessionId: sessionId,
+                }),
+              });
+              const verifyData = await verifyResponse.json();
+              hideTyping();
+              if (verifyData.success) {
+                addMessage(verifyData.response, true);
+              } else {
+                addMessage("Error processing payment.", true);
+              }
+            } catch (error) {
+              hideTyping();
+              addMessage("Error verifying payment.", true);
+              console.error("Error:", error);
+            }
+          },
+          onCancel: () => {
+            addMessage("Payment cancelled. Type 99 to try again.", true);
+          },
+        });
+      }
     } else {
       addMessage("Sorry, something went wrong. Please try again.", true);
     }

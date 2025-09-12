@@ -1,4 +1,3 @@
-// Restaurant Menu Data
 const menuItems = {
   // Main Food Categories
   mains: {

@@ -1,6 +1,10 @@
-const Session = require("../models/sessionModel.js");
-const Order = require("../models/orderModel.js");
-const { menuHelpers } = require("../data/menuItems.js");
+const dotenv = require("dotenv");
+const axios = require("axios");
+const Session = require("../models/sessionModel");
+const Order = require("../models/orderModel");
+const { menuHelpers } = require("../data/menuItems");
+
+dotenv.config({ path: "./config.env" });
 
 // Initialize chat session
 async function initializeChat(req, res) {
@@ -57,10 +61,18 @@ async function handleChatMessage(req, res) {
     // Process the message based on current step
     const response = await processUserInput(session, userInput);
 
-    res.json({
-      success: true,
-      response: response,
-    });
+    if (typeof response === "object" && response.text && response.paymentData) {
+      res.json({
+        success: true,
+        response: response.text, // Send text as response
+        paymentData: response.paymentData, // Include paymentData separately
+      });
+    } else {
+      res.json({
+        success: true,
+        response: response, // Handle string responses
+      });
+    }
   } catch (error) {
     console.error("Handle chat message error:", error);
     res.json({
@@ -73,6 +85,21 @@ async function handleChatMessage(req, res) {
 // Main function to process user input
 async function processUserInput(session, userInput) {
   const input = userInput.toLowerCase();
+
+  if (session.currentStep === "awaiting_email") {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(input)) {
+      return `❌ *Invalid Email*\nPlease enter a valid email address:`;
+    }
+    session.customerEmail = input;
+    session.currentStep = "main_menu"; // Reset to main_menu
+    await session.save();
+    return await handleCheckout(session);
+  }
+
+  if (input.startsWith("ref_")) {
+    return await handlePaymentVerification(session, input);
+  }
 
   // Handle global commands first
   if (input === "0") {
@@ -274,6 +301,54 @@ async function handleOrderHistory(session) {
   return historyText;
 }
 
+async function handlePaymentVerification(session, userInput) {
+  const reference = userInput.replace("ref_", "");
+  try {
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("Paystack verify response:", response.data); // Debug
+    if (response.data.status && response.data.data.status === "success") {
+      const order = await Order.findOne({ paymentReference: reference });
+      if (order && order.totalAmount * 100 === response.data.data.amount) {
+        order.status = "paid";
+        order.paymentStatus = "success";
+        await order.save();
+        return (
+          `✅ *Payment Successful!*\n\n` +
+          `Order Number: ${order.orderNumber}\n` +
+          `Total Amount: ₦${order.totalAmount.toLocaleString()}\n` +
+          `Reference: ${reference}\n\n` +
+          `Thank you for your order! 🎉\n\n` +
+          menuHelpers.formatMainMenu()
+        );
+      } else {
+        return (
+          `❌ *Payment Verification Failed: Amount mismatch or order not found*\n\n` +
+          menuHelpers.formatMainMenu()
+        );
+      }
+    } else {
+      return `❌ *Payment Failed*\n\n` + menuHelpers.formatMainMenu();
+    }
+  } catch (error) {
+    console.error(
+      "Payment verification error:",
+      error.response?.data || error.message
+    );
+    return (
+      `❌ *Error Verifying Payment: ${error.message}*\n\n` +
+      menuHelpers.formatMainMenu()
+    );
+  }
+}
+
 // Handle checkout
 async function handleCheckout(session) {
   const currentOrder = await Order.getCurrentOrder(session.sessionId);
@@ -286,27 +361,93 @@ async function handleCheckout(session) {
     );
   }
 
-  // For now, we'll complete the order without payment
   // Payment integration will be added later
-  await currentOrder.completeOrder();
+  if (!session.customerEmail) {
+    session.currentStep = "checkout";
+    await session.save();
+    return `📧 Please enter your email address to continue with payment.`;
+  }
 
-  let checkoutText = `✅ *Order Placed Successfully!*\n\n`;
-  checkoutText += `Order Number: ${currentOrder.orderNumber}\n`;
-  checkoutText += `Total Amount: ₦${currentOrder.totalAmount.toLocaleString()}\n\n`;
-  checkoutText += `📋 *Order Summary:*\n`;
+  // Create Paystack transaction
+  try {
+    const payload = {
+      amount: currentOrder.totalAmount * 100, // Convert to kobo
+      email: session.customerEmail,
+      reference: `ref_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 11)}`,
+      callback_url: `${
+        process.env.NODE_ENV === "production"
+          ? "https://cynical-punishment.pipeops.net"
+          : "http://localhost:3000"
+      }/payment/callback`,
+      metadata: {
+        orderId: currentOrder._id.toString(),
+        orderNumber: currentOrder.orderNumber,
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
+        customerEmail: session.customerEmail,
+      },
+      channels: ["card", "bank", "ussd", "qr", "mobile_money", "bank_transfer"],
+    };
 
-  currentOrder.items.forEach((item) => {
-    const itemTotal = item.price * item.quantity;
-    checkoutText += `• ${item.quantity}x ${
-      item.name
-    } - ₦${itemTotal.toLocaleString()}\n`;
-  });
+    console.log("Paystack payload:", payload); // Debug
 
-  checkoutText += `\nThank you for your order! 🎉\n\n`;
-  checkoutText += `Would you like to place another order?\n\n`;
-  checkoutText += menuHelpers.formatMainMenu();
+    const response = await axios.post(
+      "https://api.paystack.co/transaction/initialize",
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-  return checkoutText;
+    console.log("Paystack initialize response:", response.data); // Debug
+
+    if (response.data.status && response.data.data) {
+      currentOrder.paymentReference = response.data.data.reference;
+      await currentOrder.save();
+
+      return {
+        text:
+          `✅ *Order Placed! Proceed to Payment*\n\n` +
+          `Order Number: ${currentOrder.orderNumber}\n` +
+          `Total Amount: ₦${currentOrder.totalAmount.toLocaleString()}\n\n` +
+          `📋 *Order Summary:*\n` +
+          currentOrder.items
+            .map(
+              (item) =>
+                `• ${item.quantity}x ${item.name} - ₦${(
+                  item.price * item.quantity
+                ).toLocaleString()}`
+            )
+            .join("\n") +
+          `\n\n` +
+          `💳 *Payment Initiated*\nPlease complete the payment in the popup.`,
+        paymentData: {
+          email: session.customerEmail,
+          amount: payload.amount,
+          reference: response.data.data.reference,
+          publicKey: process.env.PAYSTACK_PUBLIC_KEY,
+          orderId: currentOrder._id.toString(),
+          orderNumber: currentOrder.orderNumber,
+        },
+      };
+    } else {
+      console.error("Paystack initialization failed:", response.data);
+      return (
+        `❌ *Payment Initialization Failed*\n\n` + menuHelpers.formatMainMenu()
+      );
+    }
+  } catch (error) {
+    console.error("Checkout error:", error.response?.data || error.message);
+    return (
+      `❌ *Error Initiating Payment: ${error.message}*\n\n` +
+      menuHelpers.formatMainMenu()
+    );
+  }
 }
 
 // Handle cancel order

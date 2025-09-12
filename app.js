@@ -1,11 +1,10 @@
+const dotenv = require("dotenv");
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
 const MongoStore = require("connect-mongo");
 const path = require("path");
-const dotenv = require("dotenv");
 const chatRoutes = require("./routes/chatRoutes");
-const viewRoutes = require("./routes/viewRoutes");
 
 dotenv.config({ path: "./config.env" });
 
@@ -45,13 +44,16 @@ app.use(
 );
 
 app.use("/chat", chatRoutes);
-app.use("/", viewRoutes);
 
-// app.use("*", (req, res) => {
-//   res.status(404).json({
-//     success: false,
-//     message: "Page not found",
-//   });
-// });
+app.get("/", (req, res) => {
+  res.render("index");
+});
+
+app.use(/.*/, (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Page not found",
+  });
+});
 
 module.exports = app;
