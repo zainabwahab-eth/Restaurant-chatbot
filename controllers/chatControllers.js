@@ -70,7 +70,7 @@ async function handleChatMessage(req, res) {
     const session = await Session.findOrCreate(sessionId, deviceId);
 
     // Process the message based on current step
-    const response = await processUserInput(req, session, userInput);
+    const response = await processUserInput(session, userInput);
 
     if (typeof response === "object" && response.text && response.paymentData) {
       res.json({
@@ -94,7 +94,7 @@ async function handleChatMessage(req, res) {
 }
 
 // Main function to process user input
-async function processUserInput(req, session, userInput) {
+async function processUserInput(session, userInput) {
   const input = userInput.toLowerCase();
 
   //Handle email input for checkout
@@ -123,7 +123,7 @@ async function processUserInput(req, session, userInput) {
   }
 
   if (input === "99") {
-    return await handleCheckout(req, session);
+    return await handleCheckout(session);
   }
 
   if (input === "back" || input === "menu") {
@@ -312,7 +312,7 @@ async function handleOrderHistory(session) {
 }
 
 // Handle checkout
-async function handleCheckout(req, session) {
+async function handleCheckout(session) {
   const currentOrder = await Order.getCurrentOrder(session.sessionId);
 
   if (!currentOrder || currentOrder.items.length === 0) {
@@ -337,7 +337,11 @@ async function handleCheckout(req, session) {
       reference: `ref_${Date.now()}_${Math.random()
         .toString(36)
         .substring(2, 11)}`,
-      callback_url: `${req.protocol}://${req.get("host")}/payment/callback`,
+      callback_url: `${
+        process.env.NODE_ENV === "production"
+          ? "https://cynical-punishment.pipeops.net"
+          : "https://4728b0c88f94.ngrok-free.app/"
+      }/payment/callback`,
       metadata: {
         orderId: currentOrder._id.toString(),
         orderNumber: currentOrder.orderNumber,

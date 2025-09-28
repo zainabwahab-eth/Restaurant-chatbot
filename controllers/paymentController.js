@@ -49,7 +49,6 @@ exports.checkPaymentStatus = async (req, res, next) => {
 
 // Webhook handler for Paystack
 exports.handlePaystackWebhook = async (req, res, next) => {
-
   //Verify the webhook signature
   const secret = process.env.PAYSTACK_SECRET_KEY;
   const hash = crypto
