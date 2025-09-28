@@ -4,7 +4,7 @@
 
 ## 🚀 Deployed Application
 
-Try the live demo at: [Zainab Restaurant ChatBot](https://cynical-punishment.pipeops.net/)
+Try the live demo at: [Zainab Restaurant ChatBot](https://grieving-thumb.pipeops.net/)
 
 ## 📋 Features
 
