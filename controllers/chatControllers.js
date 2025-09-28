@@ -29,7 +29,7 @@ async function initializeChat(req, res) {
       });
     }
 
-    // Extract device ID from session ID (simple approach)
+    // Extract device ID from session ID
     const deviceId = sessionId;
 
     // Find or create session
@@ -70,7 +70,7 @@ async function handleChatMessage(req, res) {
     const session = await Session.findOrCreate(sessionId, deviceId);
 
     // Process the message based on current step
-    const response = await processUserInput(session, userInput);
+    const response = await processUserInput(req, session, userInput);
 
     if (typeof response === "object" && response.text && response.paymentData) {
       res.json({
@@ -94,7 +94,7 @@ async function handleChatMessage(req, res) {
 }
 
 // Main function to process user input
-async function processUserInput(session, userInput) {
+async function processUserInput(req, session, userInput) {
   const input = userInput.toLowerCase();
 
   //Handle email input for checkout
@@ -123,7 +123,7 @@ async function processUserInput(session, userInput) {
   }
 
   if (input === "99") {
-    return await handleCheckout(session);
+    return await handleCheckout(req, session);
   }
 
   if (input === "back" || input === "menu") {
@@ -312,7 +312,7 @@ async function handleOrderHistory(session) {
 }
 
 // Handle checkout
-async function handleCheckout(session) {
+async function handleCheckout(req, session) {
   const currentOrder = await Order.getCurrentOrder(session.sessionId);
 
   if (!currentOrder || currentOrder.items.length === 0) {
@@ -434,8 +434,6 @@ async function handleBackToMainMenu(session) {
 
   return menuHelpers.formatMainMenu();
 }
-
-
 
 module.exports = {
   initializeChat,
