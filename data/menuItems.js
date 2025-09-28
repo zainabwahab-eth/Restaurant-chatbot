@@ -148,7 +148,7 @@ const menuItems = {
   },
 };
 
-// Helper functions
+// Menu Helper functions
 const menuHelpers = {
   // Get all categories
   getCategories() {
@@ -210,7 +210,7 @@ const menuHelpers = {
     };
   },
 
-  // Format menu display for bot
+  // Format category menu display
   formatCategoryMenu(categoryKey) {
     const items = this.getCategoryItems(categoryKey);
     if (!items) return null;

@@ -17,6 +17,7 @@
     "express": "^5.1.0",
     "express-session": "^1.18.2",
     "mongoose": "^8.18.0",
+    "node-cron": "^4.2.1",
     "paystack-api": "^2.0.6",
     "paystack-sdk": "^3.0.0",
     "pug": "^3.0.3",

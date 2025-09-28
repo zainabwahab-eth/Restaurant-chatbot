@@ -1,10 +1,21 @@
 const dotenv = require("dotenv");
+const cron = require("node-cron");
 const axios = require("axios");
 const Session = require("../models/sessionModel");
 const Order = require("../models/orderModel");
 const { menuHelpers } = require("../data/menuItems");
 
 dotenv.config({ path: "./config.env" });
+
+// Schedule cleanup every day at midnight
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const result = await Session.cleanupOldSessions();
+    console.log(`Cleaned up ${result.deletedCount} old sessions`);
+  } catch (error) {
+    console.error("Error cleaning up sessions:", error);
+  }
+});
 
 // Initialize chat session
 async function initializeChat(req, res) {
@@ -86,6 +97,7 @@ async function handleChatMessage(req, res) {
 async function processUserInput(session, userInput) {
   const input = userInput.toLowerCase();
 
+  //Handle email input for checkout
   if (session.currentStep === "awaiting_email") {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(input)) {
@@ -97,11 +109,7 @@ async function processUserInput(session, userInput) {
     return await handleCheckout(session);
   }
 
-  if (input.startsWith("ref_")) {
-    return await handlePaymentVerification(session, input);
-  }
-
-  // Handle global commands first
+  // Handle global commands
   if (input === "0") {
     return await handleCancelOrder(session);
   }
@@ -158,6 +166,7 @@ async function handleMainMenu(session, userInput) {
   session.currentStep = "browsing_menu";
   await session.save();
 
+  //Return items in category selected
   return menuHelpers.formatCategoryMenu(selectedCategory.id);
 }
 
@@ -177,6 +186,7 @@ async function handleMenuBrowsing(session, userInput) {
     );
   }
 
+  //Get selectedItem from category
   const selectedItem = menuHelpers.findItemBySelection(
     session.currentCategory,
     input
@@ -236,7 +246,6 @@ async function handleItemSelection(session, userInput) {
   );
 }
 
-// Handle quantity selection (this is integrated into item selection now)
 async function handleQuantitySelection(session, userInput) {
   return await handleItemSelection(session, userInput);
 }
@@ -253,6 +262,7 @@ async function handleCurrentOrder(session) {
     );
   }
 
+  //Form current order text to display cuurent order items
   let orderText = `🛒 *Your Current Order* (${currentOrder.orderNumber})\n\n`;
 
   currentOrder.items.forEach((item, index) => {
@@ -301,54 +311,6 @@ async function handleOrderHistory(session) {
   return historyText;
 }
 
-async function handlePaymentVerification(session, userInput) {
-  const reference = userInput.replace("ref_", "");
-  try {
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    console.log("Paystack verify response:", response.data); // Debug
-    if (response.data.status && response.data.data.status === "success") {
-      const order = await Order.findOne({ paymentReference: reference });
-      if (order && order.totalAmount * 100 === response.data.data.amount) {
-        order.status = "paid";
-        order.paymentStatus = "success";
-        await order.save();
-        return (
-          `✅ *Payment Successful!*\n\n` +
-          `Order Number: ${order.orderNumber}\n` +
-          `Total Amount: ₦${order.totalAmount.toLocaleString()}\n` +
-          `Reference: ${reference}\n\n` +
-          `Thank you for your order! 🎉\n\n` +
-          menuHelpers.formatMainMenu()
-        );
-      } else {
-        return (
-          `❌ *Payment Verification Failed: Amount mismatch or order not found*\n\n` +
-          menuHelpers.formatMainMenu()
-        );
-      }
-    } else {
-      return `❌ *Payment Failed*\n\n` + menuHelpers.formatMainMenu();
-    }
-  } catch (error) {
-    console.error(
-      "Payment verification error:",
-      error.response?.data || error.message
-    );
-    return (
-      `❌ *Error Verifying Payment: ${error.message}*\n\n` +
-      menuHelpers.formatMainMenu()
-    );
-  }
-}
-
 // Handle checkout
 async function handleCheckout(session) {
   const currentOrder = await Order.getCurrentOrder(session.sessionId);
@@ -361,7 +323,6 @@ async function handleCheckout(session) {
     );
   }
 
-  // Payment integration will be added later
   if (!session.customerEmail) {
     session.currentStep = "awaiting_email";
     await session.save();
@@ -376,11 +337,7 @@ async function handleCheckout(session) {
       reference: `ref_${Date.now()}_${Math.random()
         .toString(36)
         .substring(2, 11)}`,
-      callback_url: `${
-        process.env.NODE_ENV === "production"
-          ? "https://cynical-punishment.pipeops.net"
-          : "http://localhost:3000"
-      }/payment/callback`,
+      callback_url: `${req.protocol}://${req.get("host")}/payment/callback`,
       metadata: {
         orderId: currentOrder._id.toString(),
         orderNumber: currentOrder.orderNumber,
@@ -390,8 +347,6 @@ async function handleCheckout(session) {
       },
       channels: ["card", "bank", "ussd", "qr", "mobile_money", "bank_transfer"],
     };
-
-    console.log("Paystack payload:", payload); // Debug
 
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
@@ -403,8 +358,6 @@ async function handleCheckout(session) {
         },
       }
     );
-
-    console.log("Paystack initialize response:", response.data); // Debug
 
     if (response.data.status && response.data.data) {
       currentOrder.paymentReference = response.data.data.reference;
@@ -481,6 +434,8 @@ async function handleBackToMainMenu(session) {
 
   return menuHelpers.formatMainMenu();
 }
+
+
 
 module.exports = {
   initializeChat,

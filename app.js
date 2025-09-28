@@ -5,6 +5,7 @@ const session = require("express-session");
 const MongoStore = require("connect-mongo");
 const path = require("path");
 const chatRoutes = require("./routes/chatRoutes");
+const { handlePaystackWebhook } = require("./controllers/paymentController");
 
 dotenv.config({ path: "./config.env" });
 
@@ -43,6 +44,7 @@ app.use(
   })
 );
 
+app.post("/webhooks/paystack", handlePaystackWebhook);
 app.use("/chat", chatRoutes);
 
 app.get("/", (req, res) => {

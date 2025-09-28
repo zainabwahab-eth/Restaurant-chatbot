@@ -1,3 +1,7 @@
+const chatMessages = document.getElementById("chatMessages");
+const messageInput = document.getElementById("messageInput");
+const sendBtn = document.getElementById("sendBtn");
+
 function getSessionId() {
   let sessionId = localStorage.getItem("chatbot_session");
   if (!sessionId) {
@@ -9,9 +13,6 @@ function getSessionId() {
 }
 
 const sessionId = getSessionId();
-const chatMessages = document.getElementById("chatMessages");
-const messageInput = document.getElementById("messageInput");
-const sendBtn = document.getElementById("sendBtn");
 
 // Add message to chat
 function addMessage(message, isBot = false) {
@@ -43,6 +44,61 @@ function hideTyping() {
   if (typing) typing.remove();
 }
 
+//handle paystack popup
+function handlePaystackPopop(data) {
+  const paystack = new PaystackPop();
+  paystack.newTransaction({
+    key: data.paymentData.publicKey,
+    email: data.paymentData.email,
+    amount: data.paymentData.amount,
+    ref: data.paymentData.reference,
+    onSuccess: async (transaction) => {
+      addMessage("✅ Payment initiated! Checking status...", true);
+      let attempts = 0;
+      const maxAttempts = 12;
+      const checkStatus = setInterval(async () => {
+        attempts++;
+        try {
+          const verifyResponse = await fetch("/chat/check-payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reference: transaction.reference,
+              sessionId: sessionId,
+            }),
+          });
+          const verifyData = await verifyResponse.json();
+          console.log("verifyData", verifyData);
+          if (verifyData.success && verifyData.status === "paid") {
+            clearInterval(checkStatus);
+            addMessage(verifyData.response, true);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(checkStatus);
+            addMessage(verifyData.response, true);
+          }
+        } catch (error) {
+          console.error("Polling error:", error);
+          if (attempts >= maxAttempts) {
+            clearInterval(checkStatus);
+            addMessage(
+              `❌ Error checking payment status. Please check your order history (type 98).\n\n` +
+                `Type 'menu' to see the main menu`,
+              true
+            );
+          }
+        }
+      }, 5000);
+    },
+    onCancel: () => {
+      addMessage(
+        `❌ Payment cancelled. Type 99 to try again.\n\n` +
+          `Type 'menu' to see the main menu`,
+        true
+      );
+    },
+  });
+}
+
 // Send message
 async function sendMessage() {
   const message = messageInput.value.trim();
@@ -72,44 +128,13 @@ async function sendMessage() {
     if (data.success) {
       addMessage(data.response, true);
       if (data.paymentData) {
-        const paystack = new PaystackPop();
-        paystack.newTransaction({
-          key: data.paymentData.publicKey,
-          email: data.paymentData.email,
-          amount: data.paymentData.amount,
-          ref: data.paymentData.reference,
-          onSuccess: async (transaction) => {
-            addMessage(`ref_${transaction.reference}`);
-            showTyping();
-            try {
-              const verifyResponse = await fetch("/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  message: `ref_${transaction.reference}`,
-                  sessionId: sessionId,
-                }),
-              });
-              const verifyData = await verifyResponse.json();
-              hideTyping();
-              if (verifyData.success) {
-                addMessage(verifyData.response, true);
-              } else {
-                addMessage("Error processing payment.", true);
-              }
-            } catch (error) {
-              hideTyping();
-              addMessage("Error verifying payment.", true);
-              console.error("Error:", error);
-            }
-          },
-          onCancel: () => {
-            addMessage("Payment cancelled. Type 99 to try again.", true);
-          },
-        });
+        handlePaystackPopop(data);
       }
     } else {
-      addMessage("Sorry, something went wrong. Please try again.", true);
+      addMessage(
+        "Sorry, something went wrong. Please try again. Type 'back' to see the main menu",
+        true
+      );
     }
   } catch (error) {
     hideTyping();

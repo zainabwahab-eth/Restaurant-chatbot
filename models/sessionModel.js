@@ -60,7 +60,6 @@ sessionSchema.statics.cleanupOldSessions = function () {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   return this.deleteMany({
     lastActivity: { $lt: oneDayAgo },
-    isActive: false,
   });
 };
 
@@ -68,6 +67,7 @@ sessionSchema.statics.cleanupOldSessions = function () {
 sessionSchema.statics.findOrCreate = async function (sessionId, deviceId) {
   let session = await this.findOne({ sessionId });
 
+  //Create new session if session does not exist
   if (!session) {
     session = new this({
       sessionId,
