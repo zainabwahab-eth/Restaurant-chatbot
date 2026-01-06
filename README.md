@@ -4,7 +4,7 @@
 
 ## 🚀 Deployed Application
 
-Try the live demo at: [Zainab Restaurant ChatBot](https://grieving-thumb.pipeops.net/)
+Try the live demo at: [Zainab Restaurant ChatBot](https://eight-peace.pipeops.app/)
 
 ## 📋 Features
 

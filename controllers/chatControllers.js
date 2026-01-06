@@ -339,7 +339,7 @@ async function handleCheckout(session) {
         .substring(2, 11)}`,
       callback_url: `${
         process.env.NODE_ENV === "production"
-          ? "https://cynical-punishment.pipeops.net"
+          ? "https://eight-peace.pipeops.app"
           : "https://4728b0c88f94.ngrok-free.app/"
       }/payment/callback`,
       metadata: {
