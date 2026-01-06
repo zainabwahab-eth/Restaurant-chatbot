@@ -420,7 +420,7 @@ async function handleCancelOrder(session) {
   }
 
   await currentOrder.cancelOrder();
-
+  
   return (
     `✅ *Order Cancelled*\n\n` +
     `Your current order has been cancelled.\n\n` +
